@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Product, Category, Order } from '../types';
+import { Product, Category, Order, PaymentGatewayConfig } from '../types';
 
 let cachedClient: SupabaseClient | null = null;
 let lastUrl = '';
@@ -311,6 +311,62 @@ export async function deleteSupabaseCategory(id: string): Promise<boolean> {
   }
 }
 
+export async function fetchPaymentGateways(): Promise<PaymentGatewayConfig[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  try {
+    const { data, error } = await client.from('payment_gateways').select('*');
+    if (error || !data || data.length === 0) return null;
+    return data.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description || '',
+      enabled: Boolean(row.enabled),
+      mode: row.mode || 'sandbox',
+      merchantId: row.merchant_id || undefined,
+      publicKey: row.public_key || undefined,
+      secretKey: row.secret_key || undefined,
+      clientId: row.client_id || undefined,
+      currency: row.currency || 'LKR',
+      instructions: row.instructions || undefined,
+      usdRate: row.usd_rate ? Number(row.usd_rate) : 310,
+      updatedAt: row.updated_at,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+export async function upsertPaymentGateway(gateway: PaymentGatewayConfig): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const row = {
+      id: gateway.id,
+      name: gateway.name,
+      description: gateway.description,
+      enabled: gateway.enabled,
+      mode: gateway.mode,
+      merchant_id: gateway.merchantId || null,
+      public_key: gateway.publicKey || null,
+      secret_key: gateway.secretKey || null,
+      client_id: gateway.clientId || null,
+      currency: gateway.currency || 'LKR',
+      instructions: gateway.instructions || null,
+      usd_rate: gateway.usdRate || 310,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await client.from('payment_gateways').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.warn('Could not save gateway to Supabase:', error.message);
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 
 export const SUPABASE_SQL_SCHEMA = `-- ==========================================
 -- EAGLE EYE VIEW STORE — SUPABASE SQL SCHEMA
@@ -386,24 +442,55 @@ CREATE TABLE IF NOT EXISTS public.orders (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 5. Row Level Security (RLS)
+-- 5. Payment Gateways Table
+CREATE TABLE IF NOT EXISTS public.payment_gateways (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    enabled BOOLEAN DEFAULT false,
+    mode TEXT DEFAULT 'sandbox' CHECK (mode IN ('sandbox', 'live')),
+    merchant_id TEXT,
+    public_key TEXT,
+    secret_key TEXT,
+    client_id TEXT,
+    currency TEXT DEFAULT 'LKR',
+    instructions TEXT,
+    usd_rate NUMERIC DEFAULT 310,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 6. Row Level Security (RLS)
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payment_gateways ENABLE ROW LEVEL SECURITY;
 
--- Drop existing policies if they already exist to avoid 42710 duplicate errors
+-- Drop existing policies if they already exist
 DROP POLICY IF EXISTS "Public Categories Read" ON public.categories;
 DROP POLICY IF EXISTS "Public Products Read" ON public.products;
+DROP POLICY IF EXISTS "Public Payment Gateways Read" ON public.payment_gateways;
 DROP POLICY IF EXISTS "Categories Management" ON public.categories;
 DROP POLICY IF EXISTS "Products Management" ON public.products;
 DROP POLICY IF EXISTS "Orders Management" ON public.orders;
+DROP POLICY IF EXISTS "Payment Gateways Management" ON public.payment_gateways;
 
--- Allow public read access to categories and products
+-- Allow public read access for storefront
 CREATE POLICY "Public Categories Read" ON public.categories FOR SELECT USING (true);
 CREATE POLICY "Public Products Read" ON public.products FOR SELECT USING (true);
+CREATE POLICY "Public Payment Gateways Read" ON public.payment_gateways FOR SELECT USING (true);
 
--- Allow authenticated or service role write access
+-- Allow full management
 CREATE POLICY "Categories Management" ON public.categories FOR ALL USING (true);
 CREATE POLICY "Products Management" ON public.products FOR ALL USING (true);
 CREATE POLICY "Orders Management" ON public.orders FOR ALL USING (true);
+CREATE POLICY "Payment Gateways Management" ON public.payment_gateways FOR ALL USING (true);
+
+-- Insert Default Gateway Configs
+INSERT INTO public.payment_gateways (id, name, description, enabled, mode, merchant_id, secret_key, currency)
+VALUES
+('payhere', 'PayHere (Sri Lanka)', 'Accept Visa, MasterCard, AMEX, FriMi, Genie, eZ Cash & mCash', true, 'sandbox', '1211149', '4MjQ0NTEyMDUx', 'LKR'),
+('webxpay', 'WEBXPAY', 'Accept LankaQR, Visa, MasterCard, Sampath Vishwa & Mobile wallets', true, 'sandbox', 'WX-SANDBOX-DEMO-001', 'WX-SECRET-DEMO-001', 'LKR'),
+('paypal', 'PayPal Global', 'Accept international payments with PayPal balances and cards in USD', false, 'sandbox', NULL, NULL, 'USD'),
+('cod', 'Cash on Delivery (COD)', 'Accept cash upon receiving delivery', true, 'live', NULL, NULL, 'LKR')
+ON CONFLICT (id) DO NOTHING;
 `;

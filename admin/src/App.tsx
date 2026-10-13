@@ -13,6 +13,7 @@ import { CategoriesPage } from './pages/CategoriesPage';
 import { InventoryPage } from './pages/InventoryPage';
 import { CustomersPage } from './pages/CustomersPage';
 import { DatabaseSetupPage } from './pages/DatabaseSetupPage';
+import { PaymentGatewaysPage } from './pages/PaymentGatewaysPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
@@ -35,6 +36,7 @@ export function App() {
                   <Route path="/categories" element={<CategoriesPage />} />
                   <Route path="/inventory" element={<InventoryPage />} />
                   <Route path="/customers" element={<CustomersPage />} />
+                  <Route path="/payments" element={<PaymentGatewaysPage />} />
                   <Route path="/database" element={<DatabaseSetupPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="*" element={<NotFoundPage />} />

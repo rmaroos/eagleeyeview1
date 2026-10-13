@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { Product, Category, Order, Customer, StoreSettings, OrderStatus, PaymentStatus } from '../types';
-import { initialProducts, initialCategories, initialOrders, initialCustomers, initialSettings } from './mockData';
+import { Product, Category, Order, Customer, StoreSettings, OrderStatus, PaymentStatus, PaymentGatewayConfig } from '../types';
+import { initialProducts, initialCategories, initialOrders, initialCustomers, initialSettings, initialPaymentGateways } from './mockData';
 import {
   fetchSupabaseProducts,
   fetchSupabaseCategories,
@@ -8,6 +8,8 @@ import {
   deleteSupabaseProduct,
   upsertSupabaseCategory,
   deleteSupabaseCategory,
+  fetchPaymentGateways,
+  upsertPaymentGateway,
 } from './supabase';
 
 interface AdminContextType {
@@ -16,6 +18,7 @@ interface AdminContextType {
   orders: Order[];
   customers: Customer[];
   settings: StoreSettings;
+  paymentGateways: PaymentGatewayConfig[];
   // Product actions
   addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>) => Product;
   updateProduct: (id: string, updates: Partial<Product>) => void;
@@ -24,6 +27,8 @@ interface AdminContextType {
   addCategory: (category: Omit<Category, 'id'>) => Category;
   updateCategory: (id: string, updates: Partial<Category>) => void;
   deleteCategory: (id: string) => void;
+  // Payment Gateway actions
+  updatePaymentGateway: (id: string, updates: Partial<PaymentGatewayConfig>) => void;
   // Order actions
   updateOrderStatus: (orderId: string, status: OrderStatus, trackingNumber?: string) => void;
   updateOrderPayment: (orderId: string, paymentStatus: PaymentStatus) => void;
@@ -50,6 +55,7 @@ const STORAGE_KEYS = {
   ORDERS: 'eev_admin_orders_v1',
   CUSTOMERS: 'eev_admin_customers_v1',
   SETTINGS: 'eev_admin_settings_v1',
+  GATEWAYS: 'eev_admin_gateways_v1',
 };
 
 export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -98,14 +104,24 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
 
+  const [paymentGateways, setPaymentGateways] = useState<PaymentGatewayConfig[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.GATEWAYS);
+      return saved ? JSON.parse(saved) : initialPaymentGateways;
+    } catch {
+      return initialPaymentGateways;
+    }
+  });
+
   // Initial load from Supabase if connected
   useEffect(() => {
     let isMounted = true;
     async function loadFromSupabase() {
       try {
-        const [liveProds, liveCats] = await Promise.all([
+        const [liveProds, liveCats, liveGateways] = await Promise.all([
           fetchSupabaseProducts(),
           fetchSupabaseCategories(),
+          fetchPaymentGateways(),
         ]);
         if (!isMounted) return;
         if (liveProds && liveProds.length > 0) {
@@ -113,6 +129,9 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         if (liveCats && liveCats.length > 0) {
           setCategories(liveCats);
+        }
+        if (liveGateways && liveGateways.length > 0) {
+          setPaymentGateways(liveGateways);
         }
       } catch (err) {
         console.warn('Could not auto-fetch from Supabase:', err);
@@ -132,6 +151,10 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
   }, [categories]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.GATEWAYS, JSON.stringify(paymentGateways));
+  }, [paymentGateways]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
@@ -219,6 +242,22 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCategories((prev) => prev.filter((c) => c.id !== id));
     // Persist to Supabase
     deleteSupabaseCategory(id);
+  }, []);
+
+  // Payment Gateway Actions
+  const updatePaymentGateway = useCallback((id: string, updates: Partial<PaymentGatewayConfig>) => {
+    setPaymentGateways((prev) => {
+      const next = prev.map((g) => {
+        if (g.id === id) {
+          const updated = { ...g, ...updates, updatedAt: new Date().toISOString() };
+          // Persist to Supabase
+          upsertPaymentGateway(updated);
+          return updated;
+        }
+        return g;
+      });
+      return next;
+    });
   }, []);
 
   // Order Actions
@@ -315,12 +354,14 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         orders,
         customers,
         settings,
+        paymentGateways,
         addProduct,
         updateProduct,
         deleteProduct,
         addCategory,
         updateCategory,
         deleteCategory,
+        updatePaymentGateway,
         updateOrderStatus,
         updateOrderPayment,
         deleteOrder,

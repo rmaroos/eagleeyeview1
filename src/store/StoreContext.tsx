@@ -12,6 +12,11 @@ import {
   fetchCategoriesFromSupabase,
   subscribeToCatalogChanges,
 } from '@/lib/catalogService';
+import {
+  fetchActivePaymentGateways,
+  defaultGateways,
+  type PaymentGatewayConfig,
+} from '@/lib/paymentService';
 
 export interface CartItem {
   productId: string;
@@ -33,6 +38,7 @@ interface StoreContextType {
   toasts: Toast[];
   products: Product[];
   categories: Category[];
+  paymentGateways: PaymentGatewayConfig[];
   isLoadingCatalog: boolean;
   refreshCatalog: () => Promise<void>;
   addToCart: (product: Product, quantity?: number, selectedColor?: string) => void;
@@ -64,6 +70,7 @@ const StoreContext = createContext<StoreContextType | undefined>(undefined);
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [categories, setCategories] = useState<Category[]>(initialCategories);
+  const [paymentGateways, setPaymentGateways] = useState<PaymentGatewayConfig[]>(defaultGateways);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
 
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -74,15 +81,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const refreshCatalog = useCallback(async () => {
     try {
       setIsLoadingCatalog(true);
-      const [liveProds, liveCats] = await Promise.all([
+      const [liveProds, liveCats, liveGateways] = await Promise.all([
         fetchProductsFromSupabase(),
         fetchCategoriesFromSupabase(),
+        fetchActivePaymentGateways(),
       ]);
       if (liveProds && liveProds.length > 0) {
         setProducts(liveProds);
       }
       if (liveCats && liveCats.length > 0) {
         setCategories(liveCats);
+      }
+      if (liveGateways && liveGateways.length > 0) {
+        setPaymentGateways(liveGateways);
       }
       syncCatalog(liveProds, liveCats);
     } catch (err) {
@@ -288,6 +299,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         toasts,
         products,
         categories,
+        paymentGateways,
         isLoadingCatalog,
         refreshCatalog,
         addToCart,

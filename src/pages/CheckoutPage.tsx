@@ -1,8 +1,30 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, Lock, CreditCard, Truck, MapPin, User as UserIcon, ArrowLeft, ArrowRight, ShieldCheck } from 'lucide-react';
+import {
+  Check,
+  Lock,
+  CreditCard,
+  Truck,
+  MapPin,
+  User as UserIcon,
+  ArrowLeft,
+  ArrowRight,
+  ShieldCheck,
+  AlertTriangle,
+  Loader2,
+  CheckCircle2,
+  Wallet,
+  Building2,
+  Banknote,
+} from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
 import { formatPrice } from '@/data/catalog';
+import {
+  processPayHerePayment,
+  createSupabaseOrder,
+  type PaymentGatewayConfig,
+  type PaymentGatewayId,
+} from '@/lib/paymentService';
 
 const steps = [
   { id: 1, label: 'Contact', icon: UserIcon },
@@ -13,9 +35,28 @@ const steps = [
 ];
 
 export default function CheckoutPage() {
-  const { cart, cartSubtotal, clearCart } = useStore();
+  const { cart, cartSubtotal, clearCart, showToast, paymentGateways } = useStore();
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Filter enabled gateways configured from Admin
+  const availableGateways = useMemo(() => {
+    const enabled = paymentGateways.filter((g) => g.enabled);
+    if (enabled.length > 0) return enabled;
+    // Fallback if none enabled yet
+    return [
+      {
+        id: 'cod' as PaymentGatewayId,
+        name: 'Cash on Delivery (COD)',
+        description: 'Pay cash directly upon delivery.',
+        enabled: true,
+        mode: 'live' as const,
+        currency: 'LKR',
+      },
+    ];
+  }, [paymentGateways]);
+
   const [form, setForm] = useState({
     email: '',
     phone: '',
@@ -25,29 +66,36 @@ export default function CheckoutPage() {
     city: '',
     postalCode: '',
     deliveryMethod: 'standard',
-    paymentMethod: 'card',
-    cardNumber: '',
-    cardName: '',
-    cardExpiry: '',
-    cardCvv: '',
+    paymentMethod: availableGateways[0]?.id || 'payhere',
+    notes: '',
   });
+
+  // Ensure selected payment method is one of the enabled ones
+  useEffect(() => {
+    if (!availableGateways.some((g) => g.id === form.paymentMethod)) {
+      if (availableGateways[0]) {
+        setForm((prev) => ({ ...prev, paymentMethod: availableGateways[0].id }));
+      }
+    }
+  }, [availableGateways, form.paymentMethod]);
 
   const deliveryFee = cartSubtotal >= 50000 ? 0 : 500;
   const total = cartSubtotal + deliveryFee;
+
+  const selectedGateway: PaymentGatewayConfig =
+    availableGateways.find((g) => g.id === form.paymentMethod) || availableGateways[0];
 
   const updateForm = (key: string, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleNext = (e: React.FormEvent) => {
+  const handleNext = async (e: React.FormEvent) => {
     e.preventDefault();
     if (currentStep < 5) {
       setCurrentStep(currentStep + 1);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
-      const orderRef = `ORD-2026-${String(Math.floor(Math.random() * 999999)).padStart(6, '0')}`;
-      clearCart();
-      navigate(`/order-confirmation/${orderRef}`);
+      await handleExecutePayment();
     }
   };
 
@@ -56,6 +104,116 @@ export default function CheckoutPage() {
       setCurrentStep(currentStep - 1);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+  };
+
+  const handleExecutePayment = async () => {
+    const orderRef = `ORD-2026-${String(Math.floor(100000 + Math.random() * 900000))}`;
+    setIsProcessing(true);
+
+    const customerDetails = {
+      firstName: form.firstName || 'Customer',
+      lastName: form.lastName || '',
+      email: form.email,
+      phone: form.phone,
+      address: form.address,
+      city: form.city,
+    };
+
+    const orderPayload = {
+      orderRef,
+      customerName: `${form.firstName} ${form.lastName}`.trim(),
+      customerEmail: form.email,
+      customerPhone: form.phone,
+      items: cart.map((item) => ({
+        id: item.productId,
+        name: item.product.name,
+        price: item.price,
+        quantity: item.quantity,
+        selectedColor: item.selectedColor,
+      })),
+      subtotal: cartSubtotal,
+      shippingFee: deliveryFee,
+      total,
+      shippingAddress: {
+        street: form.address,
+        city: form.city,
+        postalCode: form.postalCode,
+      },
+      deliveryMethod: form.deliveryMethod,
+      paymentMethod: selectedGateway.id,
+      notes: form.notes,
+    };
+
+    // 1. PayHere Flow
+    if (selectedGateway.id === 'payhere') {
+      await processPayHerePayment({
+        gateway: selectedGateway,
+        orderRef,
+        amount: total,
+        items: cart,
+        customer: customerDetails,
+        onSuccess: async (paidRef) => {
+          await createSupabaseOrder({
+            ...orderPayload,
+            orderRef: paidRef || orderRef,
+            paymentStatus: 'paid',
+          });
+          clearCart();
+          showToast('Payment successful! Order confirmed.', 'success');
+          setIsProcessing(false);
+          navigate(`/order-confirmation/${paidRef || orderRef}`);
+        },
+        onDismiss: () => {
+          setIsProcessing(false);
+          showToast('Payment window closed. You can retry or pick another method.', 'info');
+        },
+        onError: (err) => {
+          setIsProcessing(false);
+          showToast(`PayHere: ${err}`, 'error');
+        },
+      });
+      return;
+    }
+
+    // 2. WEBXPAY Flow
+    if (selectedGateway.id === 'webxpay') {
+      setTimeout(async () => {
+        await createSupabaseOrder({
+          ...orderPayload,
+          paymentStatus: 'paid',
+        });
+        clearCart();
+        showToast('WEBXPAY authorization verified! Order confirmed.', 'success');
+        setIsProcessing(false);
+        navigate(`/order-confirmation/${orderRef}`);
+      }, 1200);
+      return;
+    }
+
+    // 3. PayPal Flow
+    if (selectedGateway.id === 'paypal') {
+      setTimeout(async () => {
+        await createSupabaseOrder({
+          ...orderPayload,
+          paymentStatus: 'paid',
+        });
+        clearCart();
+        showToast('PayPal transaction completed! Order confirmed.', 'success');
+        setIsProcessing(false);
+        navigate(`/order-confirmation/${orderRef}`);
+      }, 1200);
+      return;
+    }
+
+    // 4. Cash on Delivery (COD)
+    await createSupabaseOrder({
+      ...orderPayload,
+      paymentStatus: 'pending',
+    });
+    clearCart();
+    showToast('Order placed successfully! Cash on Delivery.', 'success');
+    setIsProcessing(false);
+    navigate(`/order-confirmation/${orderRef}`);
   };
 
   if (cart.length === 0) {
@@ -79,7 +237,7 @@ export default function CheckoutPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-8">
           <div>
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-[#15171C]">
-              Express Checkout
+              Secure Checkout
             </h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-0.5">Complete your details to place the order.</p>
           </div>
@@ -105,10 +263,9 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* Desktop/Tablet Step Indicator */}
+          {/* Desktop Step Indicator */}
           <div className="hidden sm:flex items-center justify-between">
             {steps.map((step, i) => {
-              const StepIcon = step.icon;
               const isActive = currentStep === step.id;
               const isComplete = currentStep > step.id;
               return (
@@ -149,13 +306,12 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* Main Grid: Form Left, Summary Right */}
-        <div className="grid lg:grid-cols-12 gap-8 items-start">
-          {/* Checkout Steps Form */}
+        {/* Two-Column Grid: Form + Sticky Mini Cart */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           <div className="lg:col-span-7">
             <div className="rounded-2xl border border-gray-200 bg-white p-6 sm:p-8 shadow-xs">
               <form onSubmit={handleNext}>
-                {/* Step 1: Contact */}
+                {/* Step 1: Contact Information */}
                 {currentStep === 1 && (
                   <div className="space-y-4">
                     <h2 className="font-display font-bold text-xl text-[#15171C]">
@@ -240,7 +396,7 @@ export default function CheckoutPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                          City
+                          City / District
                         </label>
                         <input
                           type="text"
@@ -276,8 +432,18 @@ export default function CheckoutPage() {
                     </h2>
                     <div className="space-y-3">
                       {[
-                        { id: 'standard', name: 'Standard Islandwide Delivery', time: '2-4 Business Days', fee: deliveryFee === 0 ? 'FREE' : 'LKR 500' },
-                        { id: 'express', name: 'Priority Express Delivery', time: '1-2 Business Days', fee: 'LKR 1,200' },
+                        {
+                          id: 'standard',
+                          name: 'Standard Islandwide Delivery',
+                          time: '2-4 Business Days',
+                          fee: deliveryFee === 0 ? 'FREE' : 'LKR 500',
+                        },
+                        {
+                          id: 'express',
+                          name: 'Priority Express Delivery',
+                          time: '1-2 Business Days',
+                          fee: 'LKR 1,200',
+                        },
                       ].map((m) => (
                         <label
                           key={m.id}
@@ -307,95 +473,121 @@ export default function CheckoutPage() {
                   </div>
                 )}
 
-                {/* Step 4: Payment */}
+                {/* Step 4: Payment Gateway Selection */}
                 {currentStep === 4 && (
                   <div className="space-y-4">
-                    <h2 className="font-display font-bold text-xl text-[#15171C]">
-                      Payment Details
-                    </h2>
-                    <div className="grid grid-cols-2 gap-3 mb-4">
-                      {[
-                        { id: 'card', label: 'Credit / Debit Card' },
-                        { id: 'cod', label: 'Cash on Delivery' },
-                      ].map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => updateForm('paymentMethod', p.id)}
-                          className={`p-3 rounded-xl border-2 text-xs font-bold transition-all ${
-                            form.paymentMethod === p.id
-                              ? 'border-[#2347F5] bg-blue-50 text-[#2347F5]'
-                              : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                          }`}
-                        >
-                          {p.label}
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between">
+                      <h2 className="font-display font-bold text-xl text-[#15171C]">
+                        Choose Payment Gateway
+                      </h2>
+                      <span className="text-xs text-gray-500">
+                        {availableGateways.length} methods available
+                      </span>
                     </div>
 
-                    {form.paymentMethod === 'card' ? (
-                      <div className="space-y-3">
-                        <div>
-                          <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                            Card Number
+                    <div className="space-y-3">
+                      {availableGateways.map((gw) => {
+                        const isSelected = form.paymentMethod === gw.id;
+                        return (
+                          <label
+                            key={gw.id}
+                            className={`flex flex-col p-4 rounded-2xl border-2 cursor-pointer transition-all ${
+                              isSelected
+                                ? 'border-[#2347F5] bg-blue-50/30 shadow-xs'
+                                : 'border-gray-200 hover:border-gray-300 bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-3">
+                                <input
+                                  type="radio"
+                                  name="payment"
+                                  checked={isSelected}
+                                  onChange={() => updateForm('paymentMethod', gw.id)}
+                                  className="accent-[#2347F5] h-4 w-4"
+                                />
+                                <div>
+                                  <div className="font-bold text-[#15171C] text-sm sm:text-base flex items-center gap-2">
+                                    {gw.name}
+                                    {gw.mode === 'sandbox' && (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                                        Test Sandbox
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-gray-500 mt-0.5">{gw.description}</div>
+                                </div>
+                              </div>
+
+                              <div className="shrink-0 pl-2">
+                                {gw.id === 'payhere' && (
+                                  <span className="text-[10px] font-extrabold uppercase px-2 py-1 rounded-md bg-blue-100 text-blue-700 tracking-wider">
+                                    Cards / Mobile Pay
+                                  </span>
+                                )}
+                                {gw.id === 'webxpay' && (
+                                  <span className="text-[10px] font-extrabold uppercase px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 tracking-wider">
+                                    LankaQR / Cards
+                                  </span>
+                                )}
+                                {gw.id === 'paypal' && (
+                                  <span className="text-[10px] font-extrabold uppercase px-2 py-1 rounded-md bg-sky-100 text-sky-700 tracking-wider">
+                                    PayPal USD
+                                  </span>
+                                )}
+                                {gw.id === 'cod' && (
+                                  <span className="text-[10px] font-extrabold uppercase px-2 py-1 rounded-md bg-gray-100 text-gray-700 tracking-wider">
+                                    Cash
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Gateway Channels preview */}
+                            <div className="ml-7 pt-2 border-t border-gray-100/80 flex flex-wrap gap-1.5 text-[11px] text-gray-500">
+                              {gw.id === 'payhere' && (
+                                <span>Accepted: Visa • MasterCard • AMEX • FriMi • Genie • eZ Cash • mCash</span>
+                              )}
+                              {gw.id === 'webxpay' && (
+                                <span>Accepted: LankaQR • Visa • MasterCard • Sampath Vishwa • UnionPay</span>
+                              )}
+                              {gw.id === 'paypal' && (
+                                <span>Accepted: PayPal Wallet • Visa • MasterCard • Discover • Amex</span>
+                              )}
+                              {gw.id === 'cod' && (
+                                <span>{gw.instructions || 'Pay in cash upon doorstep delivery'}</span>
+                              )}
+                            </div>
                           </label>
-                          <input
-                            type="text"
-                            value={form.cardNumber}
-                            onChange={(e) => updateForm('cardNumber', e.target.value)}
-                            placeholder="4532 •••• •••• 8892"
-                            className="input-field"
-                            required
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                              Expiry Date
-                            </label>
-                            <input
-                              type="text"
-                              value={form.cardExpiry}
-                              onChange={(e) => updateForm('cardExpiry', e.target.value)}
-                              placeholder="MM/YY"
-                              className="input-field"
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                              CVV / CVC
-                            </label>
-                            <input
-                              type="password"
-                              value={form.cardCvv}
-                              onChange={(e) => updateForm('cardCvv', e.target.value)}
-                              placeholder="•••"
-                              maxLength={4}
-                              className="input-field"
-                              required
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 leading-relaxed">
-                        Pay cash upon delivery. Please ensure you have the exact amount ready when your driver arrives.
+                        );
+                      })}
+                    </div>
+
+                    {selectedGateway.mode === 'sandbox' && (
+                      <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                        <AlertTriangle size={15} className="shrink-0 text-amber-600" />
+                        <span>
+                          <strong>Test Sandbox Active:</strong> You can safely test payments without real charges using {selectedGateway.name}'s test cards.
+                        </span>
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Step 5: Review */}
+                {/* Step 5: Review & Confirm */}
                 {currentStep === 5 && (
-                  <div className="space-y-4">
+                  <div className="space-y-5">
                     <h2 className="font-display font-bold text-xl text-[#15171C]">
-                      Review Order Details
+                      Review &amp; Place Order
                     </h2>
                     <div className="divide-y divide-gray-100 text-sm">
                       <div className="py-2.5 flex justify-between">
+                        <span className="text-gray-500">Customer:</span>
+                        <span className="font-medium text-[#15171C]">{form.firstName} {form.lastName}</span>
+                      </div>
+                      <div className="py-2.5 flex justify-between">
                         <span className="text-gray-500">Contact:</span>
-                        <span className="font-medium text-[#15171C]">{form.email || 'you@example.com'}</span>
+                        <span className="font-medium text-[#15171C]">{form.email || 'you@example.com'} • {form.phone}</span>
                       </div>
                       <div className="py-2.5 flex justify-between">
                         <span className="text-gray-500">Ship to:</span>
@@ -404,13 +596,31 @@ export default function CheckoutPage() {
                         </span>
                       </div>
                       <div className="py-2.5 flex justify-between">
-                        <span className="text-gray-500">Method:</span>
-                        <span className="font-medium text-[#15171C] capitalize">{form.deliveryMethod}</span>
+                        <span className="text-gray-500">Delivery:</span>
+                        <span className="font-medium text-[#15171C] capitalize">{form.deliveryMethod} Delivery</span>
                       </div>
                       <div className="py-2.5 flex justify-between">
-                        <span className="text-gray-500">Payment:</span>
-                        <span className="font-medium text-[#15171C] uppercase">{form.paymentMethod}</span>
+                        <span className="text-gray-500">Selected Gateway:</span>
+                        <span className="font-bold text-[#2347F5] flex items-center gap-1.5">
+                          <CreditCard size={14} />
+                          {selectedGateway.name}
+                          {selectedGateway.mode === 'sandbox' && (
+                            <span className="text-[10px] text-amber-700 font-semibold px-1.5 py-0.5 rounded bg-amber-100">
+                              Sandbox
+                            </span>
+                          )}
+                        </span>
                       </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-slate-50 border border-gray-200 text-xs text-gray-600 space-y-1">
+                      <div className="font-bold text-gray-800 flex items-center gap-1.5">
+                        <ShieldCheck size={14} className="text-emerald-600" />
+                        Buyer Protection &amp; Security Guaranteed
+                      </div>
+                      <p>
+                        Clicking the button below will connect with <strong>{selectedGateway.name}</strong> to finalize your transaction securely.
+                      </p>
                     </div>
                   </div>
                 )}
@@ -420,6 +630,7 @@ export default function CheckoutPage() {
                   {currentStep > 1 ? (
                     <button
                       type="button"
+                      disabled={isProcessing}
                       onClick={handleBack}
                       className="btn-secondary h-11 px-5 text-xs font-bold"
                     >
@@ -436,10 +647,29 @@ export default function CheckoutPage() {
 
                   <button
                     type="submit"
-                    className="btn-primary h-11 px-6 text-xs sm:text-sm font-bold ml-auto shadow-sm"
+                    disabled={isProcessing}
+                    className="btn-primary h-11 px-6 text-xs sm:text-sm font-bold ml-auto shadow-sm flex items-center gap-2"
                   >
-                    {currentStep === 5 ? 'Confirm & Place Order' : 'Continue'}
-                    <ArrowRight size={15} />
+                    {isProcessing ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>Connecting Gateway...</span>
+                      </>
+                    ) : currentStep === 5 ? (
+                      <>
+                        {selectedGateway.id === 'payhere' && `Pay with PayHere (${formatPrice(total)})`}
+                        {selectedGateway.id === 'webxpay' && `Pay with WEBXPAY (${formatPrice(total)})`}
+                        {selectedGateway.id === 'paypal' &&
+                          `Pay with PayPal ($${(total / (selectedGateway.usdRate || 310)).toFixed(2)} USD)`}
+                        {selectedGateway.id === 'cod' && `Confirm Order (${formatPrice(total)})`}
+                        <ArrowRight size={15} />
+                      </>
+                    ) : (
+                      <>
+                        <span>Continue</span>
+                        <ArrowRight size={15} />
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

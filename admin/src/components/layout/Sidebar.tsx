@@ -8,6 +8,7 @@ import {
   Users,
   Boxes,
   Database,
+  CreditCard,
   Settings,
   ExternalLink,
   ChevronRight,
@@ -68,6 +69,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       label: 'Supabase Sync',
       to: '/database',
       icon: Database,
+    },
+    {
+      label: 'Payment Gateways',
+      to: '/payments',
+      icon: CreditCard,
     },
     {
       label: 'Settings',

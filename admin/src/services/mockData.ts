@@ -1,4 +1,4 @@
-import { Product, Category, Order, Customer, StoreSettings } from '../types';
+import { Product, Category, Order, Customer, StoreSettings, PaymentGatewayConfig } from '../types';
 
 export const initialCategories: Category[] = [
   {
@@ -642,3 +642,50 @@ export const initialSettings: StoreSettings = {
   useLiveSupabase: Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY),
   lowStockThreshold: 5,
 };
+
+export const initialPaymentGateways: PaymentGatewayConfig[] = [
+  {
+    id: 'payhere',
+    name: 'PayHere (Sri Lanka)',
+    description: 'Accept Visa, MasterCard, AMEX, FriMi, Genie, eZ Cash, mCash, and local banking in LKR.',
+    enabled: true,
+    mode: 'sandbox',
+    merchantId: '1211149',
+    secretKey: '4MjQ0NTEyMDUx',
+    currency: 'LKR',
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'webxpay',
+    name: 'WEBXPAY',
+    description: 'Accept LankaQR, Visa, MasterCard, Diners, Sampath Vishwa, and UnionPay in LKR.',
+    enabled: true,
+    mode: 'sandbox',
+    publicKey: 'WX-SANDBOX-DEMO-001',
+    secretKey: 'WX-SECRET-DEMO-001',
+    currency: 'LKR',
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'paypal',
+    name: 'PayPal Global',
+    description: 'Accept international payments with PayPal balances and credit cards in USD.',
+    enabled: false,
+    mode: 'sandbox',
+    clientId: 'sb',
+    secretKey: '',
+    currency: 'USD',
+    usdRate: 310,
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'cod',
+    name: 'Cash on Delivery (COD)',
+    description: 'Accept physical cash payment directly upon item delivery.',
+    enabled: true,
+    mode: 'live',
+    currency: 'LKR',
+    instructions: 'Pay cash upon delivery. Please have the exact payment amount ready when the courier arrives.',
+    updatedAt: new Date().toISOString(),
+  },
+];

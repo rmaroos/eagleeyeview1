@@ -120,3 +120,21 @@ export interface StoreSettings {
   useLiveSupabase: boolean;
   lowStockThreshold: number;
 }
+
+export type PaymentGatewayId = 'payhere' | 'webxpay' | 'paypal' | 'cod';
+
+export interface PaymentGatewayConfig {
+  id: PaymentGatewayId;
+  name: string;
+  description: string;
+  enabled: boolean;
+  mode: 'sandbox' | 'live';
+  merchantId?: string; // PayHere Merchant ID
+  secretKey?: string; // PayHere Secret / WEBXPAY Secret / PayPal Secret
+  publicKey?: string; // WEBXPAY Public / App Key
+  clientId?: string; // PayPal Client ID
+  currency: string; // 'LKR' or 'USD'
+  instructions?: string; // COD or bank instructions
+  usdRate?: number; // USD to LKR conversion rate for PayPal
+  updatedAt?: string;
+}

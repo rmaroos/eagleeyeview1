@@ -74,28 +74,59 @@ CREATE TABLE IF NOT EXISTS public.orders (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 5. Row Level Security (RLS) Configuration
+-- 5. Payment Gateways Table
+CREATE TABLE IF NOT EXISTS public.payment_gateways (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    enabled BOOLEAN DEFAULT false,
+    mode TEXT DEFAULT 'sandbox' CHECK (mode IN ('sandbox', 'live')),
+    merchant_id TEXT,
+    public_key TEXT,
+    secret_key TEXT,
+    client_id TEXT,
+    currency TEXT DEFAULT 'LKR',
+    instructions TEXT,
+    usd_rate NUMERIC DEFAULT 310,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 6. Row Level Security (RLS) Configuration
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payment_gateways ENABLE ROW LEVEL SECURITY;
 
--- Drop existing policies if they already exist to avoid 42710 duplicate errors
+-- Drop existing policies if they already exist
 DROP POLICY IF EXISTS "Public Categories Read" ON public.categories;
 DROP POLICY IF EXISTS "Public Products Read" ON public.products;
+DROP POLICY IF EXISTS "Public Payment Gateways Read" ON public.payment_gateways;
 DROP POLICY IF EXISTS "Categories Management" ON public.categories;
 DROP POLICY IF EXISTS "Products Management" ON public.products;
 DROP POLICY IF EXISTS "Orders Management" ON public.orders;
+DROP POLICY IF EXISTS "Payment Gateways Management" ON public.payment_gateways;
 
--- Allow public read access to categories and products for customer storefront
+-- Allow public read access for customer storefront
 CREATE POLICY "Public Categories Read" ON public.categories FOR SELECT USING (true);
 CREATE POLICY "Public Products Read" ON public.products FOR SELECT USING (true);
+CREATE POLICY "Public Payment Gateways Read" ON public.payment_gateways FOR SELECT USING (true);
 
 -- Allow management access
 CREATE POLICY "Categories Management" ON public.categories FOR ALL USING (true);
 CREATE POLICY "Products Management" ON public.products FOR ALL USING (true);
 CREATE POLICY "Orders Management" ON public.orders FOR ALL USING (true);
+CREATE POLICY "Payment Gateways Management" ON public.payment_gateways FOR ALL USING (true);
 
--- 6. Indexes for High Performance Querying
+-- Insert Default Gateway Configs
+INSERT INTO public.payment_gateways (id, name, description, enabled, mode, merchant_id, secret_key, currency)
+VALUES
+('payhere', 'PayHere (Sri Lanka)', 'Accept Visa, MasterCard, AMEX, FriMi, Genie, eZ Cash & mCash', true, 'sandbox', '1211149', '4MjQ0NTEyMDUx', 'LKR'),
+('webxpay', 'WEBXPAY', 'Accept LankaQR, Visa, MasterCard, Sampath Vishwa & Mobile wallets', true, 'sandbox', 'WX-SANDBOX-DEMO-001', 'WX-SECRET-DEMO-001', 'LKR'),
+('paypal', 'PayPal Global', 'Accept international payments with PayPal balances and cards in USD', false, 'sandbox', NULL, NULL, 'USD'),
+('cod', 'Cash on Delivery (COD)', 'Accept cash upon receiving delivery', true, 'live', NULL, NULL, 'LKR')
+ON CONFLICT (id) DO NOTHING;
+
+-- 7. Indexes for High Performance Querying
 CREATE INDEX IF NOT EXISTS idx_products_department ON public.products(department);
 CREATE INDEX IF NOT EXISTS idx_products_category ON public.products(category);
 CREATE INDEX IF NOT EXISTS idx_products_price ON public.products(price);
