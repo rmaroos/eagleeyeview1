@@ -1,6 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Product, Category, Order, Customer, StoreSettings, OrderStatus, PaymentStatus } from '../types';
 import { initialProducts, initialCategories, initialOrders, initialCustomers, initialSettings } from './mockData';
+import {
+  fetchSupabaseProducts,
+  fetchSupabaseCategories,
+  upsertSupabaseProduct,
+  deleteSupabaseProduct,
+  upsertSupabaseCategory,
+  deleteSupabaseCategory,
+} from './supabase';
 
 interface AdminContextType {
   products: Product[];
@@ -90,6 +98,32 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
 
+  // Initial load from Supabase if connected
+  useEffect(() => {
+    let isMounted = true;
+    async function loadFromSupabase() {
+      try {
+        const [liveProds, liveCats] = await Promise.all([
+          fetchSupabaseProducts(),
+          fetchSupabaseCategories(),
+        ]);
+        if (!isMounted) return;
+        if (liveProds && liveProds.length > 0) {
+          setProducts(liveProds);
+        }
+        if (liveCats && liveCats.length > 0) {
+          setCategories(liveCats);
+        }
+      } catch (err) {
+        console.warn('Could not auto-fetch from Supabase:', err);
+      }
+    }
+    loadFromSupabase();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Sync to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
@@ -128,17 +162,30 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updatedAt: new Date().toISOString(),
     };
     setProducts((prev) => [newProduct, ...prev]);
+    // Persist to Supabase
+    upsertSupabaseProduct(newProduct);
     return newProduct;
   }, []);
 
   const updateProduct = useCallback((id: string, updates: Partial<Product>) => {
-    setProducts((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p))
-    );
+    setProducts((prev) => {
+      const next = prev.map((p) => {
+        if (p.id === id) {
+          const updated = { ...p, ...updates, updatedAt: new Date().toISOString() };
+          // Persist to Supabase
+          upsertSupabaseProduct(updated);
+          return updated;
+        }
+        return p;
+      });
+      return next;
+    });
   }, []);
 
   const deleteProduct = useCallback((id: string) => {
     setProducts((prev) => prev.filter((p) => p.id !== id));
+    // Persist to Supabase
+    deleteSupabaseProduct(id);
   }, []);
 
   // Category Actions
@@ -148,15 +195,30 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       id: `cat-${categoryData.slug || Date.now().toString().slice(-4)}`,
     };
     setCategories((prev) => [...prev, newCategory]);
+    // Persist to Supabase
+    upsertSupabaseCategory(newCategory);
     return newCategory;
   }, []);
 
   const updateCategory = useCallback((id: string, updates: Partial<Category>) => {
-    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
+    setCategories((prev) => {
+      const next = prev.map((c) => {
+        if (c.id === id) {
+          const updated = { ...c, ...updates };
+          // Persist to Supabase
+          upsertSupabaseCategory(updated);
+          return updated;
+        }
+        return c;
+      });
+      return next;
+    });
   }, []);
 
   const deleteCategory = useCallback((id: string) => {
     setCategories((prev) => prev.filter((c) => c.id !== id));
+    // Persist to Supabase
+    deleteSupabaseCategory(id);
   }, []);
 
   // Order Actions

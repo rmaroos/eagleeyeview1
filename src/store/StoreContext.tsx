@@ -1,5 +1,17 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import type { Product } from '@/data/catalog';
+import {
+  products as initialProducts,
+  categories as initialCategories,
+  syncCatalog,
+  type Product,
+  type Category,
+  type Department,
+} from '@/data/catalog';
+import {
+  fetchProductsFromSupabase,
+  fetchCategoriesFromSupabase,
+  subscribeToCatalogChanges,
+} from '@/lib/catalogService';
 
 export interface CartItem {
   productId: string;
@@ -19,6 +31,10 @@ interface StoreContextType {
   cart: CartItem[];
   wishlist: string[];
   toasts: Toast[];
+  products: Product[];
+  categories: Category[];
+  isLoadingCatalog: boolean;
+  refreshCatalog: () => Promise<void>;
   addToCart: (product: Product, quantity?: number, selectedColor?: string) => void;
   removeFromCart: (productId: string) => void;
   updateCartQuantity: (productId: string, quantity: number) => void;
@@ -31,14 +47,60 @@ interface StoreContextType {
   removeFromWishlist: (productId: string) => void;
   showToast: (message: string, type?: Toast['type']) => void;
   dismissToast: (id: number) => void;
+  // Helpers dynamically computed from current live products
+  getProductsByDepartment: (dept: Department) => Product[];
+  getProductsByCategory: (categorySlug: string) => Product[];
+  getProductBySlug: (slug: string) => Product | undefined;
+  getCategoriesByDepartment: (dept: Department) => Category[];
+  getBestSellers: (dept: Department) => Product[];
+  getNewArrivals: (dept?: Department) => Product[];
+  getFeaturedProducts: (dept: Department) => Product[];
+  getRelatedProducts: (product: Product, count?: number) => Product[];
+  searchProducts: (query: string) => { electronics: Product[]; fashion: Product[] };
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [categories, setCategories] = useState<Category[]>(initialCategories);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [wishlist, setWishlist] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  // Refresh products & categories from Supabase
+  const refreshCatalog = useCallback(async () => {
+    try {
+      setIsLoadingCatalog(true);
+      const [liveProds, liveCats] = await Promise.all([
+        fetchProductsFromSupabase(),
+        fetchCategoriesFromSupabase(),
+      ]);
+      if (liveProds && liveProds.length > 0) {
+        setProducts(liveProds);
+      }
+      if (liveCats && liveCats.length > 0) {
+        setCategories(liveCats);
+      }
+      syncCatalog(liveProds, liveCats);
+    } catch (err) {
+      console.warn('Failed to load live catalog:', err);
+    } finally {
+      setIsLoadingCatalog(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshCatalog();
+    const unsubscribe = subscribeToCatalogChanges(() => {
+      refreshCatalog();
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [refreshCatalog]);
 
   useEffect(() => {
     try {
@@ -154,12 +216,80 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const cartSubtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
+  // Dynamic catalog helpers
+  const getProductsByDepartment = useCallback(
+    (dept: Department): Product[] => products.filter((p) => p.department === dept),
+    [products]
+  );
+
+  const getProductsByCategory = useCallback(
+    (categorySlug: string): Product[] => products.filter((p) => p.category === categorySlug),
+    [products]
+  );
+
+  const getProductBySlug = useCallback(
+    (slug: string): Product | undefined => products.find((p) => p.slug === slug),
+    [products]
+  );
+
+  const getCategoriesByDepartment = useCallback(
+    (dept: Department): Category[] => categories.filter((c) => c.department === dept),
+    [categories]
+  );
+
+  const getBestSellers = useCallback(
+    (dept: Department): Product[] => products.filter((p) => p.department === dept && p.isBestSeller),
+    [products]
+  );
+
+  const getNewArrivals = useCallback(
+    (dept?: Department): Product[] =>
+      products.filter((p) => (dept ? p.department === dept : true) && p.isNew),
+    [products]
+  );
+
+  const getFeaturedProducts = useCallback(
+    (dept: Department): Product[] => products.filter((p) => p.department === dept && p.isFeatured),
+    [products]
+  );
+
+  const getRelatedProducts = useCallback(
+    (product: Product, count = 4): Product[] =>
+      products
+        .filter((p) => p.department === product.department && p.category === product.category && p.id !== product.id)
+        .slice(0, count),
+    [products]
+  );
+
+  const searchProducts = useCallback(
+    (query: string): { electronics: Product[]; fashion: Product[] } => {
+      const q = query.toLowerCase().trim();
+      if (!q) return { electronics: [], fashion: [] };
+      const matches = products.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.brand.toLowerCase().includes(q) ||
+          p.category.toLowerCase().includes(q) ||
+          p.description.toLowerCase().includes(q)
+      );
+      return {
+        electronics: matches.filter((p) => p.department === 'electronics'),
+        fashion: matches.filter((p) => p.department === 'fashion'),
+      };
+    },
+    [products]
+  );
+
   return (
     <StoreContext.Provider
       value={{
         cart,
         wishlist,
         toasts,
+        products,
+        categories,
+        isLoadingCatalog,
+        refreshCatalog,
         addToCart,
         removeFromCart,
         updateCartQuantity,
@@ -172,6 +302,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         removeFromWishlist,
         showToast,
         dismissToast,
+        getProductsByDepartment,
+        getProductsByCategory,
+        getProductBySlug,
+        getCategoriesByDepartment,
+        getBestSellers,
+        getNewArrivals,
+        getFeaturedProducts,
+        getRelatedProducts,
+        searchProducts,
       }}
     >
       {children}

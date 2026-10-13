@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Heart, ShoppingBag, User, Menu, X, ChevronDown, ArrowRight, Sparkles } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
-import { getCategoriesByDepartment, searchProducts, type Product } from '@/data/catalog';
+import type { Product } from '@/data/catalog';
 
 const MEGA_FEATURE = {
   Electronics: {
@@ -68,8 +68,9 @@ function SearchResults({
   onPick: () => void;
   quick: { name: string; to: string }[];
 }) {
+  const { searchProducts } = useStore();
   const q = query.trim();
-  const res = useMemo(() => (q ? searchProducts(q) : { electronics: [], fashion: [] }), [q]);
+  const res = useMemo(() => (q ? searchProducts(q) : { electronics: [], fashion: [] }), [q, searchProducts]);
   const total = res.electronics.length + res.fashion.length;
 
   if (!q) {
@@ -147,7 +148,7 @@ function NavBadge({ n, tone }: { n: number; tone: 'accent' | 'ink' }) {
 export default function Header() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { cartCount, wishlist } = useStore();
+  const { cartCount, wishlist, getCategoriesByDepartment } = useStore();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [accordion, setAccordion] = useState<MegaKey | null>(null);

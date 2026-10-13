@@ -2,15 +2,16 @@ import { useState, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { Search as SearchIcon } from 'lucide-react';
 import ProductGrid from '@/components/commerce/ProductGrid';
-import { searchProducts } from '@/data/catalog';
+import { useStore } from '@/store/StoreContext';
 import Breadcrumb from '@/components/ui/Breadcrumb';
 
 export default function SearchPage() {
+  const { searchProducts } = useStore();
   const [searchParams] = useSearchParams();
   const query = searchParams.get('q') || '';
   const [activeTab, setActiveTab] = useState<'all' | 'electronics' | 'fashion'>('all');
 
-  const results = useMemo(() => searchProducts(query), [query]);
+  const results = useMemo(() => searchProducts(query), [query, searchProducts]);
   const allResults = [...results.electronics, ...results.fashion];
 
   const displayed =

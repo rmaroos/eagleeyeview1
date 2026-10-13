@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react';
 import Breadcrumb from '@/components/ui/Breadcrumb';
 import ProductGrid from '@/components/commerce/ProductGrid';
 import SortDropdown, { type SortOption } from '@/components/commerce/SortDropdown';
-import { products, getNewArrivals, getBestSellers, type Product } from '@/data/catalog';
+import { useStore } from '@/store/StoreContext';
+import type { Product } from '@/data/catalog';
 
 type CollectionType = 'new-arrivals' | 'best-sellers' | 'deals';
 
@@ -40,6 +41,7 @@ const sortOptions: SortOption[] = [
 ];
 
 export default function CollectionPage({ type }: CollectionPageProps) {
+  const { products, getNewArrivals, getBestSellers } = useStore();
   const [sortBy, setSortBy] = useState('recommended');
   const [activeDept, setActiveDept] = useState<'all' | 'electronics' | 'fashion'>('all');
 
@@ -53,7 +55,7 @@ export default function CollectionPage({ type }: CollectionPageProps) {
       result = products.filter((p) => p.oldPrice !== undefined);
     }
     return result;
-  }, [type]);
+  }, [type, products, getNewArrivals, getBestSellers]);
 
   const filtered = useMemo(() => {
     let result = baseProducts;

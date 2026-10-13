@@ -5,9 +5,8 @@ import Breadcrumb from '@/components/ui/Breadcrumb';
 import ProductGrid from '@/components/commerce/ProductGrid';
 import FilterPanel, { MobileFilterDrawer, type FilterGroup } from '@/components/commerce/FilterPanel';
 import SortDropdown, { type SortOption } from '@/components/commerce/SortDropdown';
+import { useStore } from '@/store/StoreContext';
 import {
-  products,
-  categories,
   brands,
   type Department,
   type Product,
@@ -23,6 +22,7 @@ const sortOptions: SortOption[] = [
 ];
 
 export default function ListingPage() {
+  const { products, categories } = useStore();
   const params = useParams();
   const location = useLocation();
 
@@ -173,7 +173,7 @@ export default function ListingPage() {
     }
 
     return result;
-  }, [department, categorySlug, selectedFilters, sortBy]);
+  }, [department, categorySlug, selectedFilters, sortBy, products]);
 
   const handleFilterChange = (name: string, value: string) => {
     setSelectedFilters((prev) => {

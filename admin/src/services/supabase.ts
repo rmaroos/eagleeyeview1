@@ -120,6 +120,197 @@ export async function seedSupabaseDatabase(
   }
 }
 
+export function mapRowToProduct(row: any): Product {
+  return {
+    id: row.id,
+    slug: row.slug,
+    department: row.department,
+    category: row.category,
+    subcategory: row.subcategory || undefined,
+    brand: row.brand,
+    name: row.name,
+    description: row.description,
+    price: Number(row.price),
+    oldPrice: row.old_price ? Number(row.old_price) : undefined,
+    rating: row.rating ? Number(row.rating) : 5.0,
+    reviewCount: row.review_count || 0,
+    images: Array.isArray(row.images) ? row.images : [],
+    badges: Array.isArray(row.badges) ? row.badges : [],
+    stock: Number(row.stock || 0),
+    isBestSeller: Boolean(row.is_best_seller),
+    isNew: Boolean(row.is_new),
+    isFeatured: Boolean(row.is_featured),
+    specs: Array.isArray(row.specs) ? row.specs : [],
+    keySpec: row.key_spec || undefined,
+    colors: Array.isArray(row.colors) ? row.colors : [],
+    material: row.material || undefined,
+    bagType: row.bag_type || undefined,
+    closure: row.closure || undefined,
+    dimensions: row.dimensions || undefined,
+    careInstructions: row.care_instructions || undefined,
+    whatsIncluded: Array.isArray(row.whats_included) ? row.whats_included : [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function mapProductToRow(p: Product): any {
+  return {
+    id: p.id,
+    slug: p.slug,
+    department: p.department,
+    category: p.category,
+    subcategory: p.subcategory || null,
+    brand: p.brand,
+    name: p.name,
+    description: p.description,
+    price: p.price,
+    old_price: p.oldPrice || null,
+    rating: p.rating || 5.0,
+    review_count: p.reviewCount || 0,
+    images: p.images || [],
+    badges: p.badges || [],
+    stock: p.stock || 0,
+    is_best_seller: Boolean(p.isBestSeller),
+    is_new: Boolean(p.isNew),
+    is_featured: Boolean(p.isFeatured),
+    specs: p.specs || [],
+    key_spec: p.keySpec || null,
+    colors: p.colors || [],
+    material: p.material || null,
+    bag_type: p.bagType || null,
+    closure: p.closure || null,
+    dimensions: p.dimensions || null,
+    care_instructions: p.careInstructions || null,
+    whats_included: p.whatsIncluded || [],
+  };
+}
+
+export function mapRowToCategory(row: any): Category {
+  return {
+    id: row.id,
+    slug: row.slug,
+    department: row.department,
+    name: row.name,
+    image: row.image,
+    description: row.description || undefined,
+    subcategories: Array.isArray(row.subcategories) ? row.subcategories : [],
+  };
+}
+
+export function mapCategoryToRow(c: Category): any {
+  return {
+    id: c.id,
+    slug: c.slug,
+    department: c.department,
+    name: c.name,
+    image: c.image,
+    description: c.description || null,
+    subcategories: c.subcategories || [],
+  };
+}
+
+export async function fetchSupabaseProducts(): Promise<Product[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  try {
+    const { data, error } = await client
+      .from('products')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('Error fetching products from Supabase:', error);
+      return null;
+    }
+    return (data || []).map(mapRowToProduct);
+  } catch (err) {
+    console.warn('Failed to query Supabase products:', err);
+    return null;
+  }
+}
+
+export async function fetchSupabaseCategories(): Promise<Category[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  try {
+    const { data, error } = await client.from('categories').select('*');
+    if (error) {
+      console.warn('Error fetching categories from Supabase:', error);
+      return null;
+    }
+    return (data || []).map(mapRowToCategory);
+  } catch (err) {
+    console.warn('Failed to query Supabase categories:', err);
+    return null;
+  }
+}
+
+export async function upsertSupabaseProduct(p: Product): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const row = mapProductToRow(p);
+    const { error } = await client.from('products').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.error('Failed to upsert product in Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to upsert product in Supabase:', err);
+    return false;
+  }
+}
+
+export async function deleteSupabaseProduct(id: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('products').delete().eq('id', id);
+    if (error) {
+      console.error('Failed to delete product from Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to delete product from Supabase:', err);
+    return false;
+  }
+}
+
+export async function upsertSupabaseCategory(c: Category): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const row = mapCategoryToRow(c);
+    const { error } = await client.from('categories').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.error('Failed to upsert category in Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to upsert category in Supabase:', err);
+    return false;
+  }
+}
+
+export async function deleteSupabaseCategory(id: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('categories').delete().eq('id', id);
+    if (error) {
+      console.error('Failed to delete category from Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to delete category from Supabase:', err);
+    return false;
+  }
+}
+
 
 export const SUPABASE_SQL_SCHEMA = `-- ==========================================
 -- EAGLE EYE VIEW STORE — SUPABASE SQL SCHEMA

@@ -12,12 +12,6 @@ import {
   Zap,
   Check,
 } from 'lucide-react';
-import {
-  getCategoriesByDepartment,
-  getBestSellers,
-  getFeaturedProducts,
-  getNewArrivals,
-} from '@/data/catalog';
 import { useStore } from '@/store/StoreContext';
 import Rating from '@/components/ui/Rating';
 import WishlistButton from '@/components/ui/WishlistButton';
@@ -755,6 +749,7 @@ function Benefits() {
    PAGE COMPONENT
 ──────────────────────────────────────────────────────────── */
 export default function HomePage() {
+  const { getCategoriesByDepartment, getBestSellers, getFeaturedProducts, getNewArrivals } = useStore();
   const eCats = getCategoriesByDepartment('electronics');
   const fCats = getCategoriesByDepartment('fashion');
   const eBest = getBestSellers('electronics').slice(0, 8);

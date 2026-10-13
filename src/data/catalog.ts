@@ -42,7 +42,7 @@ export interface Category {
   subcategories?: { name: string; slug: string }[];
 }
 
-export const categories: Category[] = [
+export let categories: Category[] = [
   {
     id: 'cat-mobile',
     slug: 'mobile-phones',
@@ -169,7 +169,7 @@ export const categories: Category[] = [
   },
 ];
 
-export const products: Product[] = [
+export let products: Product[] = [
   // ===== ELECTRONICS =====
   // Mobile Phones
   {
@@ -957,3 +957,14 @@ export const brands = {
 };
 
 export const allBrands = [...new Set([...brands.electronics, ...brands.fashion])];
+
+export function syncCatalog(newProducts?: Product[] | null, newCategories?: Category[] | null) {
+  if (newProducts && newProducts.length > 0) {
+    products.length = 0;
+    products.push(...newProducts);
+  }
+  if (newCategories && newCategories.length > 0) {
+    categories.length = 0;
+    categories.push(...newCategories);
+  }
+}

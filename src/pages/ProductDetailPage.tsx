@@ -8,16 +8,12 @@ import QuantitySelector from '@/components/ui/QuantitySelector';
 import ProductGallery from '@/components/commerce/ProductGallery';
 import ProductGrid from '@/components/commerce/ProductGrid';
 import { useStore } from '@/store/StoreContext';
-import {
-  getProductBySlug,
-  getRelatedProducts,
-  formatPrice,
-} from '@/data/catalog';
+import { formatPrice } from '@/data/catalog';
 
 export default function ProductDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
-  const { addToCart } = useStore();
+  const { addToCart, getProductBySlug, getRelatedProducts } = useStore();
 
   const slug = params.slug;
   const product = slug ? getProductBySlug(slug) : undefined;

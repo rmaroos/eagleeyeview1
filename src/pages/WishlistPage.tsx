@@ -1,12 +1,11 @@
 import { Link } from 'react-router-dom';
 import { Heart, ArrowRight } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
-import { products } from '@/data/catalog';
 import ProductGrid from '@/components/commerce/ProductGrid';
 import Breadcrumb from '@/components/ui/Breadcrumb';
 
 export default function WishlistPage() {
-  const { wishlist } = useStore();
+  const { wishlist, products } = useStore();
 
   const wishlistProducts = products.filter((p) => wishlist.includes(p.id));
   const electronicsItems = wishlistProducts.filter((p) => p.department === 'electronics');
